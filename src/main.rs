@@ -3,45 +3,81 @@ use json::{self, JsonValue};
 use std::io;
 use std::option::Option;
 use std::collections::HashMap;
-fn main() -> Result<(), Box<dyn std::error::Error>>{
-	const COD_JAEN : i32 = 3543;
-	const _COD_LINARES :i32 = 3549;
-	const _COD_TGN :i32 = 6494;
-	//sacamos los json
-	let url_municipios = "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/Listados/Municipios/";
+use std::fs::{self, exists};
+use std::env;
 
+fn save_initial_file(url: &str) {
+	let req = reqwest::blocking::get(url.to_string() + "/Listados/Municipios/");
+	let out = req.unwrap().text().unwrap();
+	let _ = fs::write("cities.json", out);
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>>{
+	//sacamos los json
+	let url_base = "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes";
+	match exists("cities.json") {
+		Ok(false) => save_initial_file(url_base),
+		Ok(true) => (),
+		Err(_) => (),
+	}
 	//municipios
-	let result = reqwest::blocking::get(url_municipios)?.text()?;
-	let json_municipios = json::parse(&result).unwrap();
+	let file = std::fs::read_to_string("cities.json")?;
+	let json_municipios = json::parse(&file).unwrap();
 	let mut municipios = HashMap::new();
 	for mun in json_municipios.members() {
-		let muni = get_Municipio(&mun);
-		municipios.insert(muni.municipio.clone(), muni);
+		let muni = get_municipio(&mun);
+	 	municipios.insert(muni.municipio.clone(), muni);
 	}
-	println!("{}",municipios.len());
+	let mut city = String::new();
 	//sacamos las gasolineras
-	println!("Escriba el municipio");
-	let mut query = String::new();
-	io::stdin().read_line(&mut query).unwrap();
-	//json
-	let mut url_precios = "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/FiltroMunicipio/".to_string();
-	let query = query.to_lowercase().trim().to_string();
-	let mun = municipios.get(&query).unwrap();
-	url_precios.push_str(&mun.id.to_string().as_str());
-	//precios
-	println!("Precios de carburantes en {}",mun.municipio);
-	let mut result = reqwest::blocking::get(url_precios)?.text()?;
-	//sacamos el objeto json
-	result = result.replace("Precio Gasolina 95 E5", "Precio95");
-	result = result.replace("Precio Gasoleo A", "PrecioGasoil");
-	let json_out = json::parse(&result).unwrap();
-	//precios
-	let gasolineras = get_precios(&json_out).unwrap();
-	let mut resultados : Vec<Gasolinera> = Vec::new();
-	for gasolinera in gasolineras.members() {
-		resultados.push(get_gasolinera(&gasolinera));
-		println!("{:?}", resultados.last().unwrap());
+	let args : Vec<String> = env::args().collect();
+	let mut iter_args = args.iter().skip(1);
+	while let Some(arg) = iter_args.next() {
+		println!("{}",arg.to_string());
+		match arg.as_str() {
+			"-c" => {
+				if let Some(val) = iter_args.next() {
+					city = val.to_string();
+				} else {
+					println!("-c requiere un valor, como una ciudad");
+				}
+			}
+			"-a" | "--ayuda" => {println!("uso: carburantes [OPCIÓN] [ARGUMENTO]\n\
+				opciones:\n\
+				carburantes {{-a --ayuda}}\n\
+				carburantes {{-c [ciudad]}}");
+			return Ok(())
+			}
+			"" => {
+				println!("debes escribir argumentos, -a o --ayuda para imprimir ayuda");
+			}
+			_ => {
+				println!("debes escribir argumentos, -a o --ayuda para imprimir ayuda");
+			}
+		}
 	}
+	println!("{}", city);
+	// let mut query = String::new();
+	// io::stdin().read_line(&mut query).unwrap();
+	// //json
+	// let mut url_precios = "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/FiltroMunicipio/".to_string();
+	// let query = query.to_lowercase().trim().to_string();
+	// let mun = municipios.get(&query).unwrap();
+	// url_precios.push_str(&mun.id.to_string().as_str());
+	// //precios
+	// println!("Precios de carburantes en {}",mun.municipio);
+	// let mut result = reqwest::blocking::get(url_precios)?.text()?;
+	// //sacamos el objeto json
+	// result = result.replace("Precio Gasolina 95 E5", "Precio95");
+	// result = result.replace("Precio Gasoleo A", "PrecioGasoil");
+	// let json_out = json::parse(&result).unwrap();
+	// //precios
+	// let gasolineras = get_precios(&json_out).unwrap();
+	// let mut resultados : Vec<Gasolinera> = Vec::new();
+	// for gasolinera in gasolineras.members() {
+	// 	resultados.push(get_gasolinera(&gasolinera));
+	// 	println!("{:?}", resultados.last().unwrap());
+	// }
 
 	Ok(())
 	
@@ -81,7 +117,7 @@ fn get_gasolinera(json_val : &JsonValue) -> Gasolinera {
 	}
 	gas
 }
-fn get_Municipio(json_val:&JsonValue) -> Municipio {
+fn get_municipio(json_val:&JsonValue) -> Municipio {
 	let mut mun = Municipio {
 		ccaa : "".to_string(),
 		municipio : "".to_string(),

@@ -1,2 +1,6 @@
 /target
 /src/.vs/
+/src/.main
+.main.rs.kate-swp
+cities.json
+/src/cities.json
