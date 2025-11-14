@@ -4,3 +4,5 @@
 .main.rs.kate-swp
 cities.json
 /src/cities.json
+Cargo.lock
+

@@ -1,10 +1,26 @@
 use reqwest;
 use json::{self, JsonValue};
+use std::cmp::Ordering;
 use std::io;
 use std::option::Option;
 use std::collections::HashMap;
 use std::fs::{self, exists};
 use std::env;
+use clap::{Parser,ValueEnum};
+
+#[derive(Parser)]
+struct Cli{
+	#[arg(short, long)]
+	city: String,
+	#[arg(value_enum, short, long)]
+	fuel_type: FuelType
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum FuelType {
+	Gas,
+	Diesel
+}
 
 fn save_initial_file(url: &str) {
 	let req = reqwest::blocking::get(url.to_string() + "/Listados/Municipios/");
@@ -28,59 +44,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
 		let muni = get_municipio(&mun);
 	 	municipios.insert(muni.municipio.clone(), muni);
 	}
-	let mut city = String::new();
-	//sacamos las gasolineras
-	let args : Vec<String> = env::args().collect();
-	let mut iter_args = args.iter().skip(1);
-	while let Some(arg) = iter_args.next() {
-		println!("{}",arg.to_string());
-		match arg.as_str() {
-			"-c" => {
-				if let Some(val) = iter_args.next() {
-					city = val.to_string();
-				} else {
-					println!("-c requiere un valor, como una ciudad");
-				}
-			}
-			"-a" | "--ayuda" => {println!("uso: carburantes [OPCIÓN] [ARGUMENTO]\n\
-				opciones:\n\
-				carburantes {{-a --ayuda}}\n\
-				carburantes {{-c [ciudad]}}");
-			return Ok(())
-			}
-			"" => {
-				println!("debes escribir argumentos, -a o --ayuda para imprimir ayuda");
-			}
-			_ => {
-				println!("debes escribir argumentos, -a o --ayuda para imprimir ayuda");
-			}
+	let args = Cli::parse();
+	// //json
+	let mut url_precios = "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/FiltroMunicipio/".to_string();
+	let query = args.city.to_lowercase().trim().to_string();
+	let mun = municipios.get(&query).unwrap();
+	url_precios.push_str(&mun.id.to_string().as_str());
+	//precios
+	println!("Precios de carburantes en {}",mun.municipio);
+	let mut result = reqwest::blocking::get(url_precios)?.text()?;
+	//sacamos el objeto json
+	result = result.replace("Precio Gasolina 95 E5", "Precio95");
+	result = result.replace("Precio Gasoleo A", "PrecioGasoil");
+	let json_out = json::parse(&result).unwrap();
+	//precios
+	let gasolineras = get_precios(&json_out).unwrap();
+	let mut resultados : Vec<Gasolinera> = Vec::new();
+	for gasolinera in gasolineras.members() {
+		resultados.push(get_gasolinera(&gasolinera));
+	}
+
+	sort_gas(&mut resultados, args.fuel_type);
+	for gas in resultados {
+		match args.fuel_type {
+			FuelType::Gas => println!("{}, {} €", gas.nombre, gas.precio_gasolina),
+			FuelType::Diesel => println!("{}, {} €", gas.nombre, gas.precio_gasoil),
 		}
 	}
-	println!("{}", city);
-	// let mut query = String::new();
-	// io::stdin().read_line(&mut query).unwrap();
-	// //json
-	// let mut url_precios = "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/FiltroMunicipio/".to_string();
-	// let query = query.to_lowercase().trim().to_string();
-	// let mun = municipios.get(&query).unwrap();
-	// url_precios.push_str(&mun.id.to_string().as_str());
-	// //precios
-	// println!("Precios de carburantes en {}",mun.municipio);
-	// let mut result = reqwest::blocking::get(url_precios)?.text()?;
-	// //sacamos el objeto json
-	// result = result.replace("Precio Gasolina 95 E5", "Precio95");
-	// result = result.replace("Precio Gasoleo A", "PrecioGasoil");
-	// let json_out = json::parse(&result).unwrap();
-	// //precios
-	// let gasolineras = get_precios(&json_out).unwrap();
-	// let mut resultados : Vec<Gasolinera> = Vec::new();
-	// for gasolinera in gasolineras.members() {
-	// 	resultados.push(get_gasolinera(&gasolinera));
-	// 	println!("{:?}", resultados.last().unwrap());
-	// }
-
 	Ok(())
 	
+}
+fn sort_gas(gas_stations :&mut Vec<Gasolinera>, f_type: FuelType) {
+	match f_type {
+		FuelType::Gas => 	gas_stations.sort_by(|a,b| {
+			a.precio_gasolina
+			.partial_cmp(&b.precio_gasolina)
+			.unwrap_or(Ordering::Equal)
+		}),
+		FuelType::Diesel => gas_stations.sort_by(|a,b| {
+			a.precio_gasoil
+			.partial_cmp(&b.precio_gasoil)
+			.unwrap_or(Ordering::Equal)
+		}),
+	}
 }
 // resultados.push(get_gasolinera(&resultados));
 // println!("{:?}", get_gasolinera(&gasolinera));
@@ -135,7 +141,7 @@ fn get_municipio(json_val:&JsonValue) -> Municipio {
 	}
 	mun
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, PartialOrd)]
 struct Gasolinera {
 	nombre : String,
 	precio_gasolina : f32,
@@ -143,6 +149,7 @@ struct Gasolinera {
 	direccion: String,
 	horario: String,
 }
+
 #[derive(Debug)]
 struct Municipio {
 	ccaa:String,
